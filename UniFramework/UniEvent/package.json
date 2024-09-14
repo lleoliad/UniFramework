@@ -1,0 +1,50 @@
+{
+  "name": "com.gmhevinci.uniframework-event",
+  "displayName": "UniFramework - Event",
+  "version": "0.0.1",
+  "unity": "2018.4",
+  "description": "Unity game development framework",
+  "license": "MIT",
+  "scopedRegistries": [
+    {
+      "name": "package.openupm.com",
+      "url": "https://package.openupm.com",
+      "scopes": [
+        "com.cysharp.unitask"
+      ]
+    }
+  ],
+  "dependencies": {
+    "com.cysharp.unitask": "2.5.5"
+  },
+  "keywords": [
+    "UniFramework",
+    "Event"
+  ],
+  "author": {
+    "name": "gmhevinci",
+    "email": "hevinci@hotmail.com",
+    "url": "https://github.com/gmhevinci/UniFramework"
+  },
+  "category": "GUI",
+  "relatedPackages": {},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gmhevinci/UniFramework"
+  },
+  "samples": [
+    {
+      "displayName": "Examples",
+      "description": "Examples",
+      "path": "Samples~/Examples"
+    },
+    {
+      "displayName": "Tutorials",
+      "description": "Tutorials",
+      "path": "Samples~/Tutorials"
+    }
+  ],
+  "publishConfig": {
+    "registry": "https://package.openupm.com"
+  }
+}
