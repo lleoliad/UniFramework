@@ -15,7 +15,8 @@
     }
   ],
   "dependencies": {
-    "com.cysharp.unitask": "2.5.5"
+    "com.cysharp.unitask": "2.5.5",
+    "com.gmhevinci.uniframework-reference": "https://github.com/lleoliad/UniFramework.git?path=/UniFramework/UniReference#1.0.0-preview"
   },
   "keywords": [
     "UniFramework",
