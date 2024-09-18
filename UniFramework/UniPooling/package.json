@@ -17,7 +17,7 @@
   ],
   "dependencies": {
     "com.cysharp.unitask": "2.5.5",
-    "com.tuyoogame.yooasset": "2.1.2"
+    "com.tuyoogame.yooasset": "^2.1.2"
   },
   "keywords": [
     "UniFramework",
