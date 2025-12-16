@@ -8,24 +8,249 @@ namespace UniFramework.Event
 {
     public static class UniEvent
     {
+        public enum EBroadcastOrder
+        {
+            /// <summary>
+            /// 正序广播
+            /// </summary>
+            Normal,
+
+            /// <summary>
+            /// 倒序广播
+            /// </summary>
+            Reverse
+        }
+
+        /// <summary>
+        /// 订阅对象
+        /// </summary>
+        private class Listener : IReference
+        {
+            public Action<IEventMessage> Callback { set; get; }
+            public bool IsDestroyed { set; get; } = false;
+            public void OnSpawn()
+            {
+                Callback = null;
+                IsDestroyed = false;
+            }
+        }
+
+        /// <summary>
+        /// 事件封装
+        /// </summary>
+        private class EventWrapper
+        {
+            private readonly Type _eventType;
+            private readonly List<Listener> _subscribers = new List<Listener>(100);
+            private bool _isPublishing = false;
+
+            public EventWrapper(Type eventType)
+            {
+                _eventType = eventType;
+            }
+            public bool Contains(System.Action<IEventMessage> callback)
+            {
+                foreach (var listener in _subscribers)
+                {
+                    if (listener.IsDestroyed == false && listener.Callback == callback)
+                        return true;
+                }
+                return false;
+            }
+            public void Add(System.Action<IEventMessage> callback)
+            {
+                if (AllowDuplicateRegistration == false)
+                {
+                    if (Contains(callback))
+                    {
+                        UniLogger.Warning($"The event {_eventType.FullName} listener has been registered !");
+                        return;
+                    }
+                }
+
+                var wrapper = UniReference.Spawn<Listener>();
+                wrapper.Callback = callback;
+                wrapper.IsDestroyed = false;
+                _subscribers.Add(wrapper);
+            }
+            public void Remove(System.Action<IEventMessage> callback)
+            {
+                foreach (var listener in _subscribers)
+                {
+                    if (listener.IsDestroyed == false && listener.Callback == callback)
+                    {
+                        listener.IsDestroyed = true; //注意：标记销毁，在下次该事件广播的时候移除！
+                        break; //注意：在可重复注册机制下，每次只移除一个！
+                    }
+                }
+            }
+            public void Trigger(IEventMessage message)
+            {
+                // 检测递归广播行为
+                if (_isPublishing)
+                {
+                    UniLogger.Error($"Event {_eventType.FullName} is already broadcasting. Recursive Publish is not allowed.");
+
+                    // 回收事件对象
+                    if (message is IReference refClass)
+                        UniReference.Release(refClass);
+
+                    // 直接返回
+                    return;
+                }
+
+                _isPublishing = true;
+                try
+                {
+                    if (BroadcastOrder == EBroadcastOrder.Normal)
+                    {
+                        NormalBroadcast(message);
+                    }
+                    else if (BroadcastOrder == EBroadcastOrder.Reverse)
+                    {
+                        ReverseBroadcast(message);
+                    }
+                    else
+                    {
+                        throw new System.NotImplementedException(BroadcastOrder.ToString());
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UniLogger.Error($"Fatal exception : {ex.Message} {ex.StackTrace}");
+                }
+                finally
+                {
+                    _isPublishing = false;
+
+                    // 回收消息对象
+                    if (message is IReference refClass)
+                        UniReference.Release(refClass);
+                }
+            }
+            public void Clear()
+            {
+                foreach (var listener in _subscribers)
+                {
+                    UniReference.Release(listener);
+                }
+                _subscribers.Clear();
+                _isPublishing = false;
+            }
+
+            private void NormalBroadcast(IEventMessage message)
+            {
+                bool isDirty = false;
+
+                // 注意：过程中新注册的订阅不起效！
+                int count = _subscribers.Count;
+                for (int i = 0; i < count; i++)
+                {
+                    var listener = _subscribers[i];
+                    if (listener.IsDestroyed)
+                    {
+                        isDirty = true;
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (listener.Callback != null)
+                            listener.Callback.Invoke(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        UniLogger.Error($"Event {_eventType.FullName} listener threw exception: {ex.Message} {ex.StackTrace}");
+                    }
+                }
+
+                // 移除销毁对象
+                if (isDirty)
+                {
+                    for (int i = _subscribers.Count - 1; i >= 0; i--)
+                    {
+                        var listener = _subscribers[i];
+                        if (listener.IsDestroyed)
+                        {
+                            _subscribers.RemoveAt(i);
+                            UniReference.Release(listener);
+                        }
+                    }
+                }
+            }
+            private void ReverseBroadcast(IEventMessage message)
+            {
+                bool isDirty = false;
+
+                // 注意：过程中新注册的订阅不起效！
+                int count = _subscribers.Count;
+                for (int i = count - 1; i >= 0; i--)
+                {
+                    var listener = _subscribers[i];
+                    if (listener.IsDestroyed)
+                    {
+                        isDirty = true;
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (listener.Callback != null)
+                            listener.Callback.Invoke(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        UniLogger.Error($"Event {_eventType.FullName} listener threw exception: {ex.Message} {ex.StackTrace}");
+                    }
+                }
+
+                // 移除销毁对象
+                if (isDirty)
+                {
+                    for (int i = _subscribers.Count - 1; i >= 0; i--)
+                    {
+                        var listener = _subscribers[i];
+                        if (listener.IsDestroyed)
+                        {
+                            _subscribers.RemoveAt(i);
+                            UniReference.Release(listener);
+                        }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 延迟分发
+        /// </summary>
         private class PostWrapper : IReference
         {
             public int PostFrame;
-            public int EventID;
             public IEventMessage Message;
-            
+
             public void OnSpawn()
             {
                 PostFrame = 0;
-                EventID = 0;
                 Message = null;
             }
         }
 
+
         private static bool _isInitialize = false;
         private static GameObject _driver = null;
-        private static readonly Dictionary<int, LinkedList<Action<IEventMessage>>> _listeners = new Dictionary<int, LinkedList<Action<IEventMessage>>>(1000);
+        private static readonly Dictionary<Type, EventWrapper> _eventWrappers = new Dictionary<Type, EventWrapper>(1000);
         private static readonly List<PostWrapper> _postingList = new List<PostWrapper>(1000);
+
+        /// <summary>
+        /// 是否允许重复注册（默认允许）
+        /// </summary>
+        public static bool AllowDuplicateRegistration { get; set; } = true;
+
+        /// <summary>
+        /// 广播模式
+        /// </summary>
+        public static EBroadcastOrder BroadcastOrder { get; set; } = EBroadcastOrder.Normal;
+
 
         /// <summary>
         /// 初始化事件系统
@@ -72,7 +297,7 @@ namespace UniFramework.Event
                 var wrapper = _postingList[i];
                 if (UnityEngine.Time.frameCount > wrapper.PostFrame)
                 {
-                    SendMessage(wrapper.EventID, wrapper.Message);
+                    SendMessage(wrapper.Message);
                     _postingList.RemoveAt(i);
                     UniReference.Release(wrapper);
                 }
@@ -84,11 +309,11 @@ namespace UniFramework.Event
         /// </summary>
         public static void ClearAll()
         {
-            foreach (int eventId in _listeners.Keys)
+            foreach (var wrapper in _eventWrappers.Values)
             {
-                _listeners[eventId].Clear();
+                wrapper.Clear();
             }
-            _listeners.Clear();
+            _eventWrappers.Clear();
             _postingList.Clear();
         }
 
@@ -98,8 +323,7 @@ namespace UniFramework.Event
         public static void AddListener<TEvent>(System.Action<IEventMessage> listener) where TEvent : IEventMessage
         {
             System.Type eventType = typeof(TEvent);
-            int eventId = eventType.GetHashCode();
-            AddListener(eventId, listener);
+            AddListener(eventType, listener);
         }
 
         /// <summary>
@@ -107,21 +331,13 @@ namespace UniFramework.Event
         /// </summary>
         public static void AddListener(System.Type eventType, System.Action<IEventMessage> listener)
         {
-            int eventId = eventType.GetHashCode();
-            AddListener(eventId, listener);
+            if (_eventWrappers.TryGetValue(eventType, out var wrapper) == false)
+            {
+                wrapper = new EventWrapper(eventType);
+                _eventWrappers[eventType] = wrapper;
+            }
+            wrapper.Add(listener);
         }
-
-        /// <summary>
-        /// 添加监听
-        /// </summary>
-        public static void AddListener(int eventId, System.Action<IEventMessage> listener)
-        {
-            if (_listeners.ContainsKey(eventId) == false)
-                _listeners.Add(eventId, new LinkedList<Action<IEventMessage>>());
-            if (_listeners[eventId].Contains(listener) == false)
-                _listeners[eventId].AddLast(listener);
-        }
-
 
         /// <summary>
         /// 移除监听
@@ -129,8 +345,7 @@ namespace UniFramework.Event
         public static void RemoveListener<TEvent>(System.Action<IEventMessage> listener) where TEvent : IEventMessage
         {
             System.Type eventType = typeof(TEvent);
-            int eventId = eventType.GetHashCode();
-            RemoveListener(eventId, listener);
+            RemoveListener(eventType, listener);
         }
 
         /// <summary>
@@ -138,55 +353,31 @@ namespace UniFramework.Event
         /// </summary>
         public static void RemoveListener(System.Type eventType, System.Action<IEventMessage> listener)
         {
-            int eventId = eventType.GetHashCode();
-            RemoveListener(eventId, listener);
-        }
-
-        /// <summary>
-        /// 移除监听
-        /// </summary>
-        public static void RemoveListener(int eventId, System.Action<IEventMessage> listener)
-        {
-            if (_listeners.ContainsKey(eventId))
+            if (_eventWrappers.TryGetValue(eventType, out var wrapper))
             {
-                if (_listeners[eventId].Contains(listener))
-                    _listeners[eventId].Remove(listener);
+                wrapper.Remove(listener);
             }
         }
-
 
         /// <summary>
         /// 实时广播事件
         /// </summary>
         public static void SendMessage(IEventMessage message)
         {
-            int eventId = message.GetType().GetHashCode();
-            SendMessage(eventId, message);
-        }
-
-        /// <summary>
-        /// 实时广播事件
-        /// </summary>
-        public static void SendMessage(int eventId, IEventMessage message)
-        {
-            if (_listeners.ContainsKey(eventId) == false)
+            if (message == null)
                 return;
 
-            LinkedList<Action<IEventMessage>> listeners = _listeners[eventId];
-            if (listeners.Count > 0)
+            var eventType = message.GetType();
+            if (_eventWrappers.TryGetValue(eventType, out var wrapper))
             {
-                var currentNode = listeners.Last;
-                while (currentNode != null)
-                {
-                    currentNode.Value.Invoke(message);
-                    currentNode = currentNode.Previous;
-                }
+                wrapper.Trigger(message);
             }
-
-            // 回收引用对象
-            IReference refClass = message as IReference;
-            if (refClass != null)
-                UniReference.Release(refClass);
+            else
+            {
+                // 如果事件没人监听，也直接回收
+                if (message is IReference refClass)
+                    UniReference.Release(refClass);
+            }
         }
 
         /// <summary>
@@ -194,18 +385,8 @@ namespace UniFramework.Event
         /// </summary>
         public static void PostMessage(IEventMessage message)
         {
-            int eventId = message.GetType().GetHashCode();
-            PostMessage(eventId, message);
-        }
-
-        /// <summary>
-        /// 延迟广播事件
-        /// </summary>
-        public static void PostMessage(int eventId, IEventMessage message)
-        {
             var wrapper = UniReference.Spawn<PostWrapper>();
             wrapper.PostFrame = UnityEngine.Time.frameCount;
-            wrapper.EventID = eventId;
             wrapper.Message = message;
             _postingList.Add(wrapper);
         }

@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections;
 using System.Collections.Generic;
 
 namespace UniFramework.Event
@@ -7,6 +6,10 @@ namespace UniFramework.Event
     public class EventGroup
     {
         private readonly Dictionary<System.Type, List<Action<IEventMessage>>> _cachedListener = new Dictionary<System.Type, List<Action<IEventMessage>>>();
+
+        public EventGroup()
+        {
+        }
 
         /// <summary>
         /// 添加一个监听
